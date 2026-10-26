@@ -1,0 +1,34 @@
+{
+  "name": "qq",
+  "version": "1.24.0",
+  "description": "The control plane for game-dev agents — close the loop with verified compile, test, and cross-model review across Unity, Godot, Unreal, and S&box. Lifecycle-aware /qq:go routing, structured runtime state in .qq/, 28 /qq:* slash commands. Claude Code-first, agent-agnostic via MCP and plain shell / Python scripts.",
+  "author": {
+    "name": "Yukang Tian",
+    "url": "https://github.com/tykisgod"
+  },
+  "homepage": "https://github.com/tykisgod/quick-question",
+  "repository": "https://github.com/tykisgod/quick-question",
+  "license": "MIT",
+  "keywords": [
+    "unity",
+    "unity-editor",
+    "game-development",
+    "gamedev",
+    "csharp",
+    "C#",
+    "auto-compile",
+    "compilation",
+    "testing",
+    "unit-test",
+    "editmode",
+    "playmode",
+    "code-review",
+    "cross-model-review",
+    "codex",
+    "hooks",
+    "skills",
+    "lifecycle",
+    "workflow",
+    "macos"
+  ]
+}

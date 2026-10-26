@@ -1,0 +1,114 @@
+# CLAUDE.md
+
+## Language
+
+Default response language: English
+
+## Coding Standards
+
+- Do not modify UI code unless explicitly requested
+- Reflection is only allowed in test code and developer tools; never in game runtime logic
+- No unnecessary defensive programming (extra null checks, ?., ?? etc.) — trust internal code contracts
+- Aim for the current best solution — maintainable, well-structured
+- No backward compatibility shims — delete old interfaces and deprecated fields directly
+- No over-engineering — don't add abstraction layers, config options, or generic parameters for hypothetical future needs
+
+## Compile Verification (Required)
+
+After every .cs file change, **must** verify compilation passes before reporting "done":
+- If the built-in `tykit_mcp` compile tool `unity_compile` is available, use it first.
+- Otherwise, if third-party MCP compile tools are available (`recompile_scripts` from mcp-unity, or `assets-refresh` from Unity-MCP), use those.
+- Otherwise, use `./scripts/unity-compile-smart.sh --timeout 15`
+- If compilation fails, analyze the error, fix it, and recompile until it passes
+- Do not skip this step
+
+## qq Runtime Helpers
+
+When the project installs qq runtime helpers, prefer them over prompt-only stage inference:
+
+- Use `python3 ./scripts/qq-project-state.py --pretty` to inspect the current project state before deciding what the next workflow step should be.
+- Use `python3 ./scripts/qq-worktree.py status --pretty` when the task may be running in a qq-managed linked worktree. That tells you whether merge-back / cleanup applies.
+- Treat `work_mode` from `qq-project-state.py` as the process-intensity dial. Shared defaults live in `qq.yaml`; the current worktree/task can override them in `.qq/local.yaml`.
+  - `prototype` → keep it light; do not force design docs, plans, or heavy review unless the user asks.
+  - `feature` → expect concise design/plan/test hygiene for retainable work.
+  - `fix` → reproduce first, then make the smallest safe repair and run the regression path.
+  - `hardening` → expect tests, review, and doc/code consistency before push.
+- Treat `policy_profile` separately from `work_mode`.
+  - `work_mode` says what kind of task this is.
+  - `policy_profile` says how much verification pressure the project wants before moving on.
+  - `mode_recommended_next` is the raw task-path suggestion.
+  - `recommended_next` is the actual next step after verification pressure is applied.
+- Treat `trust_level` separately from both.
+  - `trust_level` says how much automatic host-side permission widening is acceptable.
+  - `trusted` keeps convenience features on.
+  - `balanced` and `strict` mean you should expect less source-worktree widening, and no raw engine commands in the standard MCP tools.
+- Use `./scripts/qq-policy-check.sh --json` before deep best-practice or code review work so deterministic Unity issues are caught first.
+- Treat `.qq/state/*.json` as the source for latest compile/test status. Do not paste raw `.qq/runs/*.json` logs into prompts unless you need a specific failure excerpt.
+- Keep `.qq/telemetry/` machine-readable. It exists for the local loop now and for future CI/reporting later.
+
+## tykit (Runtime Editor Control)
+
+The project includes tykit, an HTTP server that auto-starts when Unity Editor opens.
+Port is determined by project path hash, recorded in `Temp/tykit.json`.
+
+### Usage
+
+```bash
+# Get port
+PORT=$(python3 -c "import json; print(json.load(open('Temp/tykit.json'))['port'])")
+
+# Ping
+curl -s http://localhost:$PORT/ping
+
+# Send command
+curl -s -X POST http://localhost:$PORT/ \
+  -d '{"command":"<command>","args":{...}}' \
+  -H 'Content-Type: application/json'
+```
+
+### Common Commands
+
+```bash
+# Status
+{"command":"status"}
+{"command":"console","args":{"count":20}}
+{"command":"console","args":{"count":20,"filter":"error"}}
+{"command":"compile-status"}
+{"command":"get-compile-result"}
+
+# Tests
+{"command":"run-tests","args":{"mode":"editmode"}}
+{"command":"run-tests","args":{"mode":"playmode"}}
+{"command":"run-tests","args":{"filter":"MyTest"}}
+{"command":"get-test-result"}
+{"command":"get-test-result","args":{"runId":"abc12345"}}
+
+# Editor Control
+{"command":"play"}
+{"command":"stop"}
+{"command":"refresh"}
+{"command":"save-scene"}
+{"command":"clear-console"}
+
+# Find
+{"command":"find","args":{"name":"Ship"}}
+{"command":"find","args":{"type":"Camera"}}
+{"command":"inspect","args":{"id":12345}}
+```
+
+## MCP Backend (Optional)
+
+If you have qq's built-in `tykit_mcp` bridge configured, prefer its `unity_*` tools first. If only third-party Unity MCP servers are configured (mcp-unity or Unity-MCP), use those as compatible fallbacks.
+
+**Compatibility:** mcp-unity requires Unity 6+. Unity-MCP has no specific version requirement.
+
+### Capability Mapping
+
+| Capability | tykit direct | tykit_mcp | mcp-unity | Unity-MCP |
+|-----------|-------------|-----------|-----------|-----------|
+| Compile | `compile` | `unity_compile` | `recompile_scripts` | `assets-refresh` |
+| Run tests | `run-tests` | `unity_run_tests` | `run_tests` | `tests-run` |
+| Read console | `console` | `unity_console` | `get_console_logs` | `console-get-logs` |
+| Clear console | `clear-console` | `unity_console` (`action=clear`) | *(not available)* | *(not available)* |
+
+When MCP tools are available, prefer built-in `tykit_mcp` tools first. If only third-party MCP tools are available, use them. When no MCP tools are detected, the direct tykit workflow applies as documented above.

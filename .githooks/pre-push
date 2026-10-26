@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-push hook: catch common mistakes before they hit CI
+set -euo pipefail
+
+QQ_PY="python3"
+"$QQ_PY" --version >/dev/null 2>&1 || QQ_PY="python"
+
+echo "[qq pre-push] Running checks..."
+
+# 1. JSON validity
+for f in hooks/hooks.json .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+  if [ -f "$f" ]; then
+    $QQ_PY -m json.tool "$f" > /dev/null || { echo "❌ Invalid JSON: $f"; exit 1; }
+  fi
+done
+
+# 2. Version consistency: plugin.json == CHANGELOG first version
+PLUGIN_VER=$($QQ_PY -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+# 与 CI（.github/workflows/validate.yml）同样用 python 取版本：macOS 自带的 BSD grep 不认 -P；
+# 找不到版本时输出空串、交给下面「没有就跳过」，不在 pipefail 下静默退 1。
+# python 自己读文件、不从 stdin 喂：WindowsApps 的 python3 别名喂 stdin 会挂住。
+CHANGELOG_VER=$($QQ_PY -c "import re; head = ''.join(open('CHANGELOG.md', encoding='utf-8').readlines()[:20]); m = re.search(r'## \[(\d+\.\d+\.\d+)\]', head); print(m.group(1) if m else '')")
+
+if [ -n "$CHANGELOG_VER" ] && [ "$PLUGIN_VER" != "$CHANGELOG_VER" ]; then
+  echo "❌ Version mismatch: plugin.json=$PLUGIN_VER, CHANGELOG=$CHANGELOG_VER"
+  echo "   Fix: update CHANGELOG.md or plugin.json so versions match."
+  exit 1
+fi
+
+echo "[qq pre-push] ✓ All checks passed"

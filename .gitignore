@@ -1,0 +1,8 @@
+*_review.md
+.DS_Store
+.obsidian/
+__pycache__/
+.qq/
+scripts/__pycache__/
+scripts/**/__pycache__/
+*.pyc

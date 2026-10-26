@@ -1,0 +1,211 @@
+# TODO
+
+> **Outdated (2026-10-13):** a historical log, last maintained on 2026-03-31; for the current behavior read `CLAUDE.md` and `docs/en/`. Several items marked done below were later reversed: qq no longer installs or repins `com.tyk.tykit`; `unity-compile-smart.sh` and `unity-test.sh` no longer fall back to batch mode on their own (they exit 2; batch mode runs only with `--batch`); `qq-codex-mcp.py` registers `qq_mcp.py`, not a tykit bridge. The Codex `unity_run_tests` item under Open refers to a tool that no longer exists.
+
+_Last updated: 2026-03-31_
+
+This file tracks follow-up issues discovered after runtime, policy, and host-integration changes. Keep it current when new E2E or user-facing gaps show up.
+
+## Open
+
+- No P0 blockers are open right now.
+- Codex `unity_run_tests` in a seeded linked worktree can still hit a host-side 120s MCP tool timeout even when the underlying qq test run completes successfully and records `passed`.
+  - Scope:
+    - seen during real `qq-codex-exec.py` E2E on `project_pirate_demo`
+    - the run record shows the linked-worktree EditMode test passed, but the host tool call timed out before the result was surfaced cleanly
+  - Meaning:
+    - this is a Codex tool-boundary UX/perf issue, not a correctness blocker
+    - root-project Codex test execution is already clean
+- The next non-blocking optimization, if needed, is to explore a local Unity Accelerator or a persistent external test pool for teams that outgrow per-worktree `Library` seeding.
+
+## Recently resolved
+
+- [x] `/qq:changes` now advances controller state, and worktree closeout now deletes the remote linked branch before removing the worktree directory.
+  - Fix:
+    - `qq-run-record.py record --capture-local-changes` now snapshots meaningful local change files plus a deterministic change fingerprint
+    - `qq-project-state.py` now treats `/qq:changes` as fresh only when the current local change snapshot still matches the recorded summary
+    - `skills/changes/SKILL.md` now tells the host to persist that `changes` run record after emitting the conversation summary
+    - `qq-worktree.py cleanup/closeout` now deletes the remote linked branch before removing the current managed worktree directory
+  - Validation:
+    - `./test.sh` now covers both transitions and passes
+    - a focused local bare-remote closeout repro now returns `deletedRemoteBranch=true`
+  - Meaning:
+    - prototype flows can move from `/qq:changes` to `/qq:commit-push` without a manual force
+    - managed-worktree closeout now leaves the remote branch state clean by default
+
+- [x] Real host multi-worktree collaboration E2E now includes successful `/qq:test` execution.
+  - Fix:
+    - `qq-worktree create` now seeds the source worktree `Library` into the linked worktree when one is available
+    - `qq-worktree.py seed-library` can restore that cache later
+    - `unity-test.sh` now auto-seeds a missing managed-worktree `Library` before falling back to batch mode
+  - Validation:
+    - on a real qq-managed linked worktree created from `project_pirate_demo_codex`, Claude completed `/qq:test editmode` with `296 passed / 0 failed`
+    - on the same linked worktree, Codex completed `unity_run_tests` with `{"ok":true,"passed":296,"failed":0,"total":296,"mode":"editmode"}`
+  - Meaning:
+    - the three-engineer collaboration model now has real host coverage for controller routing, closeout, and worktree-local Unity tests
+    - the remaining test cost is incremental import/compile time, not a correctness or environment blocker
+- [x] `install.sh` now repins existing `com.tyk.tykit` dependencies to the current tested release.
+  - Root cause:
+    - consumer projects that already had `com.tyk.tykit` in `Packages/manifest.json` were left on whatever git revision they already had
+    - this showed up immediately in a clean `project_pirate_demo` worktree, which stayed on `#b149...` until the installer was rerun with the new logic
+  - Fix:
+    - `install.sh` now updates `com.tyk.tykit` to the current tested ref even when the dependency already exists
+  - Coverage:
+    - `./test.sh` now includes a regression that starts from an older `com.tyk.tykit` revision and verifies the manifest is rewritten to the current pin
+- [x] Real Claude host `/qq:test editmode` now succeeds on the real `project_pirate_demo` root project.
+  - Validation:
+    - `claude -p --plugin-dir /Users/tyk/Documents/GitHub/quick-question --permission-mode bypassPermissions "/qq:test editmode"`
+  - Result:
+    - `349 passed / 0 failed / 0 skipped`
+    - the three runtime exceptions came from `TaskFramework` edge-case tests that intentionally throw during init / finish paths
+  - Meaning:
+    - the real Claude host path is now proven against an Editor-backed project context
+    - the remaining `/qq:test` gap is worktree-specific project context, not basic host wiring
+- [x] Real Codex host can now run the built-in Unity test tool on the real `project_pirate_demo` project.
+  - Validation:
+    - `python3 ./scripts/qq-codex-mcp.py install --pretty`
+    - `python3 /Users/tyk/Documents/GitHub/quick-question/scripts/qq-codex-exec.py --project /Users/tyk/Documents/GitHub/project_pirate_demo "Call unity_run_tests with mode editmode ..."`
+  - Result:
+    - Codex drove `unity_run_tests`
+    - returned `{\"ok\": true, \"passed\": 349, \"failed\": 0, \"total\": 349, \"mode\": \"editmode\"}`
+  - Meaning:
+    - real Codex host parity now includes actual Unity test execution on a consumer project
+    - the remaining Codex gap is collaboration-worktree `/qq:test`, not project-root transport or tool access
+- [x] Real Claude host `/qq:commit-push` now completes managed-worktree closeout without pre-seeded local test records in the linked worktree.
+  - Validation:
+    - source worktree had passing compile/test state
+    - `qq-worktree create` copied that baseline into the linked worktree
+    - linked worktree changed a non-design doc file (`README.md`)
+    - real Claude `/qq:commit-push` committed, pushed, merged back into the source branch, and cleaned up the linked worktree
+  - Meaning:
+    - the remaining closeout gap is no longer the normal doc-only linked-worktree path
+    - the remaining open item is Unity-backed `/qq:test` inside collaboration worktrees
+- [x] Real Codex host now has multi-worktree controller parity coverage.
+  - Validation is split across two real host probes:
+    - on `project_pirate_demo`, `qq-codex-mcp.py install` + `codex exec` successfully called `unity_health`
+    - on an isolated minimal Unity repo with a qq-managed linked worktree, `codex exec` successfully read `qq-project-state.py` and returned:
+      - `work_mode=prototype`
+      - `policy_profile=hardening`
+      - `recommended_next=verify_compile`
+      - `is_managed_worktree=true`
+      - `worktree_role=managed`
+      - `worktree_source_branch=feature/crew`
+  - Conclusion:
+    - Codex now has real host parity for project-local registration, MCP tool access, and per-worktree controller state
+    - the remaining Codex gap is full closeout behavior, not basic collaboration routing
+- [x] Codex now has a thin project-local exec wrapper for managed worktrees.
+  - Added `scripts/qq-codex-exec.py`.
+  - Behavior:
+    - defaults `codex exec` to `--sandbox workspace-write`
+    - defaults `-C` to the current project root
+    - auto-adds the source worktree path when the current project is a qq-managed linked worktree
+  - Result:
+    - managed-worktree closeout no longer depends on users remembering `--add-dir <source-worktree>`
+    - the remaining Codex work is Unity-backed test parity, not more transport plumbing
+  - Real host confirmation:
+    - on an isolated minimal Unity repo with a qq-managed linked worktree, running `python3 ./scripts/qq-codex-exec.py "Run python3 ./scripts/qq-worktree.py closeout --project . --auto-yes --delete-branch --pretty ..."` successfully completed closeout
+    - no manual `--add-dir <source-worktree>` was needed
+- [x] Codex MCP access now has a consumer-ready project-local install path.
+  - Added `scripts/qq-codex-mcp.py` with `install / status / remove`.
+  - The helper computes a stable project-specific server name and registers that worktree's own `scripts/tykit_mcp.py`.
+  - `qq-doctor` now surfaces the Codex registration state separately from Claude's project-local `.mcp.json` flow.
+  - Result:
+    - Codex users no longer need to hand-run `codex mcp add ...` with raw paths
+    - the remaining Codex gap is real workflow parity, not initial registration
+  - Real host confirmation:
+    - in `project_pirate_demo`, `qq-codex-mcp.py install` registered the bridge
+    - `qq-codex-mcp.py status` and `qq-doctor.py` both reported `state=configured`
+    - `codex exec` successfully called `unity_health`
+    - `qq-codex-mcp.py remove` cleaned the registration afterwards
+- [x] Claude built-in `tykit_mcp` now connects in real host sessions.
+  - Root cause: Claude Code's stdio MCP client sends newline-delimited JSON messages during `initialize`, while `tykit_mcp.py` previously only understood `Content-Length` framed messages.
+  - Fix: `tykit_mcp.py` now auto-detects JSONL vs framed MCP input and responds in the matching wire format.
+  - Extra hardening:
+    - generated `.mcp.json` now uses absolute bridge paths plus `cwd`
+    - `qq-doctor` keeps reporting host configuration and verified host connection separately
+  - Validation:
+    - direct JSONL initialize regression is now part of `./test.sh`
+    - `claude mcp list` against a temp project-local `.mcp.json` now reports `tykit ... ✓ Connected`
+- [x] Codex non-interactive sessions can call the built-in `tykit_mcp` tool surface once the server is explicitly registered.
+  - Validation:
+    - `codex mcp add tykit-demo -- python3 .../tykit_mcp.py --project ...`
+    - `codex exec` then successfully called `unity_health`
+  - Conclusion:
+    - the bridge/tool surface itself is compatible with Codex
+    - the remaining issue is Codex consumer onboarding, not MCP wire compatibility
+- [x] qq-managed worktrees now model closeout more truthfully.
+  - `qq-worktree status` now distinguishes:
+    - merge-back still needed
+    - source branch push still needed
+    - cleanup is finally safe
+  - `merge-back --push-source` now publishes the source branch when an upstream or default remote is available.
+  - `cleanup` now refuses to remove a managed worktree early unless merge-back and source publication are complete, or `--force` is explicit.
+  - Additional coverage now blocks:
+    - nested managed worktrees
+    - remote branch-name collisions
+    - stale copied `.mcp.json` paths inside linked worktrees
+- [x] `qq-doctor` now separates built-in `tykit_mcp` installation from host configuration and verified host connection.
+  - It inspects whether project-local `.mcp.json` points at this worktree's own bridge.
+  - `tykit_mcp.py` now records successful MCP `initialize` handshakes in `.qq/state/tykit-mcp-host.json`.
+  - `qq-doctor` surfaces both the config state and the last verified host connection instead of treating script presence as full availability.
+- [x] `qq-worktree` no longer treats Python bytecode caches as source-worktree dirt during merge-back.
+  - Root cause: running `qq-project-state.py` / `qq-worktree.py` in the source worktree can generate untracked `scripts/__pycache__/...` files.
+  - Impact: a managed worktree could finish cleanly, but merge-back still failed because the source worktree looked dirty.
+  - Fix: `qq-worktree.py` now ignores `__pycache__` / `.pyc` / `.pyo` runtime artifacts, including untracked directories collapsed by `git status`.
+  - Regression coverage lives in `./test.sh`.
+- [x] Real Claude host `/qq:execute --worktree` now has direct worktree-lifecycle coverage.
+  - Verified against an isolated `project_pirate_demo` clone with a local bare remote:
+    - Claude created a qq-managed linked worktree from a source feature branch
+    - executed a doc-only spike in the linked worktree
+    - committed and pushed the linked branch
+    - merged the result back into the source branch
+    - removed the linked worktree afterwards
+  - Important condition for this host probe:
+    - temporarily move `.mcp.json` aside, because the current built-in Claude MCP connection still times out
+    - run Claude with the qq plugin directory explicitly and without unrelated user plugins in the execution path
+- [x] Real Claude host `/qq:commit-push` now has direct managed-worktree coverage.
+  - Verified against an isolated qq-managed linked worktree after preparing `recommended_next=/qq:commit-push`.
+  - Result:
+    - Claude committed and pushed the managed worktree branch successfully
+    - `qq-worktree status` then reported `canCleanup=true`
+  - Remaining gap:
+    - in non-interactive host mode, this flow still stopped after push rather than continuing automatically into merge-back / cleanup
+  - Test artifact to ignore:
+    - one temp-clone run also swept in fake-dirty third-party package binaries created by the clone/LFS setup, which is an environment artifact rather than the intended qq path
+- [x] Real Claude host `/qq:go` routing now matches the collaboration controller in clean `project_pirate_demo` worktrees.
+  - Verified on three separate demo git worktrees:
+    - prototype + hardening + dirty C# spike -> `verify_compile`
+    - feature + task_focus -> `/qq:plan`
+    - hardening + compile/test green -> `/qq:claude-code-review`, then `/qq:doc-drift` after review
+  - Important condition: disable unrelated user plugins such as `superpowers` and `telegram` in the worktree's `.claude/settings.local.json`, otherwise host runs get noisy and much slower.
+- [x] Real Claude host `/qq:commit-push` gating now matches controller state in clean `project_pirate_demo` worktrees.
+  - Verified on demo git worktrees:
+    - prototype + hardening + uncompiled dirty C# change -> blocked and redirected to `verify_compile`
+    - hardening + compile/test/review green but no doc-drift -> blocked and redirected to `/qq:doc-drift`; once a full `/qq:doc-drift` run has recorded the engine code as it is now (a `doc_drift` record with `--capture-engine-changes`), it goes through. (Before issue #6 item 3 this redirect never let go: nothing wrote `doc_drift_status`, so hardening could not reach `/qq:commit-push` at all.)
+- [x] Real Claude host `/qq:test` now has environment-boundary coverage in clean `project_pirate_demo` worktrees.
+  - Verified that the skill entry and fallback logic work, but detached worktrees fall back to Unity batch mode and hit environment limits:
+    - no `Library/` cache in the worktree
+    - local installed editor version does not match the project's declared version
+  - Result: the remaining open item is not basic host wiring, but successful Editor-backed `/qq:test` execution under the same collaboration setup.
+- [x] `claude -p` authentication works again for real host E2E.
+  - Root cause was outside qq itself: local Claude CLI first-party auth had fallen into a bad state where `auth status` reported logged-in but every non-interactive `claude -p` call returned `401 Invalid authentication credentials`.
+  - Fix: refreshed local Claude auth with a clean logout/login flow.
+  - Post-fix smoke: plain `claude -p "Reply with OK."` works again, and a clean temp-project `/qq:go` host smoke succeeds.
+- [x] Multi-engineer collaboration routing now has a documented, repeatable E2E suite.
+  - Added [`docs/evals/collaboration-multi-actor.md`](../evals/collaboration-multi-actor.md) and [`docs/evals/collaboration-multi-actor.json`](../evals/collaboration-multi-actor.json).
+  - The suite now runs in `./test.sh` and covers prototype, feature, and hardening work under shared project defaults plus per-worktree overrides.
+- [x] Consumer plugin rollout now picks up the current mode-aware `/qq:go` controller.
+  - Root cause: consumer projects were still running an older cached plugin build even though the marketplace repo had moved on.
+  - Fix: versioned the plugin, published it, and reinstalled it in the consumer project so the active cache and installed plugin metadata now point at the latest controller skill.
+- [x] Claude consumer installs now have a baseline allowlist for qq controller/runtime commands.
+  - `install.sh` now merges safe local Claude permissions for `qq-project-state`, `qq-doctor`, compile, and test entrypoints.
+  - Real `/qq:go` validation in `project_pirate_demo` no longer stops on the initial `qq-project-state.py` permission gate once those rules are present.
+- [x] Artifact routing is now task-aware instead of repo-global.
+  - `qq-project-state.py` only activates design docs / plans when they match current task evidence.
+  - Repo-global docs remain background context unless they are the only candidate or match `task_focus` / modified files.
+- [x] Compile/test freshness now invalidates stale verification after newer `.cs` changes.
+  - `qq-project-state.py` downgrades stale runs to effective `not_run`.
+  - `qq-run-record.py` and `tykit_bridge.py` now write sub-second timestamps so fresh verification is not immediately misclassified as stale.
+- [x] `policy_profile` now changes controller recommendations, not just diagnostics.
+- [x] `/qq:test` and pre-push now honor profile-driven default test scope.
+- [x] `/qq:commit-push` checks controller state before continuing.

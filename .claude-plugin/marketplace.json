@@ -1,0 +1,14 @@
+{
+  "name": "quick-question-marketplace",
+  "owner": {
+    "name": "Yukang Tian",
+    "url": "https://github.com/tykisgod"
+  },
+  "plugins": [
+    {
+      "name": "qq",
+      "source": "./",
+      "description": "Game-development agent runtime — lifecycle-aware routing, explicit test authoring, auto-compile, test pipelines, code review (Claude-only or Claude + Codex), 28 skills, Unity support verified in daily use, and experimental Godot, Unreal, and S&box adapters"
+    }
+  ]
+}
